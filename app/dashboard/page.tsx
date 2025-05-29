@@ -20,65 +20,40 @@ export default function DashboardPage() {
     // Estado combinado
     const isAuthenticated = oktaAuth.isAuthenticated || samlAuth.isAuthenticated
     const loading = oktaAuth.loading || samlAuth.loading
-    const user = oktaAuth.user || samlAuth.samlAttributes
 
+    // Efecto para logs y debug (solo cuando cambian los estados principales)
     useEffect(() => {
-        console.log("🏠 Dashboard montado")
-        console.log("📊 Estado Okta:", {
-            isAuthenticated: oktaAuth.isAuthenticated,
-            loading: oktaAuth.loading,
-            user: oktaAuth.user,
+        console.log("🏠 Dashboard - Estados de autenticación:")
+        console.log("📊 Okta:", { isAuthenticated: oktaAuth.isAuthenticated, loading: oktaAuth.loading })
+        console.log("📊 SAML:", { isAuthenticated: samlAuth.isAuthenticated, loading: samlAuth.loading })
+
+        // Actualizar debug info solo cuando sea necesario
+        setDebugInfo({
+            okta: {
+                isAuthenticated: oktaAuth.isAuthenticated,
+                user: oktaAuth.user?.email || null,
+            },
+            saml: {
+                isAuthenticated: samlAuth.isAuthenticated,
+                user: samlAuth.user || null,
+            },
+            localStorage: {
+                saml_authenticated: typeof window !== "undefined" ? localStorage.getItem("saml_authenticated") : null,
+                saml_user: typeof window !== "undefined" ? localStorage.getItem("saml_user") : null,
+            },
+            timestamp: new Date().toISOString(),
         })
-        console.log("📊 Estado SAML:", {
-            isAuthenticated: samlAuth.isAuthenticated,
-            loading: samlAuth.loading,
-            user: samlAuth.samlAttributes,
-        })
+    }, [oktaAuth.isAuthenticated, samlAuth.isAuthenticated, oktaAuth.loading, samlAuth.loading]) // Solo dependencias primitivas
 
-        // Verificar sesión manualmente
-        checkBackendSession()
-    }, [oktaAuth.isAuthenticated, samlAuth.isAuthenticated])
-
-    const checkBackendSession = async () => {
-        try {
-            const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"
-
-            // Verificar sesión SAML
-            const samlResponse = await fetch(`${apiUrl}/api/saml/session`, {
-                credentials: "include",
-            })
-
-            const samlData = samlResponse.ok ? await samlResponse.json() : null
-
-            // Verificar sesión Okta
-            const oktaResponse = await fetch(`${apiUrl}/api/auth/validate`, {
-                credentials: "include",
-            })
-
-            const oktaData = oktaResponse.ok ? await oktaResponse.json() : null
-
-            setDebugInfo({
-                saml: samlData,
-                okta: oktaData,
-                timestamp: new Date().toISOString(),
-            })
-
-            console.log("🔍 Debug - Sesión SAML:", samlData)
-            console.log("🔍 Debug - Sesión Okta:", oktaData)
-        } catch (error) {
-            console.error("❌ Error verificando sesiones:", error)
-
-            setDebugInfo({ error: error })
-        }
-    }
-
-    // Si no está autenticado y no está cargando, redirigir
+    // Efecto para redirección (separado y con dependencias específicas)
     useEffect(() => {
         if (!loading && !isAuthenticated) {
             console.log("❌ No autenticado, redirigiendo al login...")
-            setTimeout(() => {
+            const timer = setTimeout(() => {
                 router.push("/?error=not_authenticated")
             }, 2000)
+
+            return () => clearTimeout(timer)
         }
     }, [loading, isAuthenticated, router])
 
@@ -88,7 +63,7 @@ export default function DashboardPage() {
                 await oktaAuth.signOut()
             }
             if (samlAuth.isAuthenticated) {
-                await samlAuth.logoutFromSAML()
+                samlAuth.logoutFromSAML()
             }
             router.push("/")
         } catch (error) {
@@ -160,10 +135,10 @@ export default function DashboardPage() {
                                     <CardContent>
                                         <div className="space-y-2">
                                             <p>
-                                                <strong>Email:</strong> {oktaAuth.user?.email}
+                                                <strong>Email:</strong> {oktaAuth.user?.email || "N/A"}
                                             </p>
                                             <p>
-                                                <strong>Nombre:</strong> {oktaAuth.user?.name}
+                                                <strong>Nombre:</strong> {oktaAuth.user?.name || "N/A"}
                                             </p>
                                             <p>
                                                 <strong>Estado:</strong> <span className="text-green-600">Autenticado</span>
@@ -181,10 +156,10 @@ export default function DashboardPage() {
                                     <CardContent>
                                         <div className="space-y-2">
                                             <p>
-                                                <strong>Usuario:</strong> {samlAuth.samlAttributes?.email || "N/A"}
+                                                <strong>Usuario:</strong> {samlAuth.user || "N/A"}
                                             </p>
                                             <p>
-                                                <strong>Método:</strong> {samlAuth.samlAttributes?.method || "SAML"}
+                                                <strong>Método:</strong> SAML
                                             </p>
                                             <p>
                                                 <strong>Estado:</strong> <span className="text-green-600">Autenticado</span>
@@ -205,9 +180,6 @@ export default function DashboardPage() {
                   <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto">
                     {JSON.stringify(debugInfo, null, 2)}
                   </pre>
-                                    <Button onClick={checkBackendSession} variant="outline" size="sm" className="mt-2">
-                                        Refrescar Debug
-                                    </Button>
                                 </CardContent>
                             </Card>
                         )}
