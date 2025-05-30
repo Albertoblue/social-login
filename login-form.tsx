@@ -2,6 +2,8 @@
 
 import type React from "react"
 
+import Link from "next/link"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -9,31 +11,19 @@ import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Linkedin, GitBranch, AlertCircle } from "lucide-react"
-import { useOktaAuth } from "@/hooks/use-okta-auth"
-
-// Reemplazar la importación condicional compleja con:
 import { SimpleSAMLButton } from "@/components/simple-saml-button"
+import { CognitoLoginButton } from "@/components/oidc-login-buttons"
+import { ClientOnlyAuth } from "@/components/client-only-auth"
+import { useOktaAuth } from "@/hooks/use-okta-auth"
 
 export default function LoginForm() {
   const handleEmailLogin = (e: React.FormEvent) => {
     e.preventDefault()
-    // Implementar lógica de login con email/contraseña
     console.log("Login with email/password")
   }
 
   const handleSocialLogin = (provider: string) => {
-    // Implementar lógica de login social
     console.log(`Login with ${provider}`)
-  }
-
-  const { signIn: oktaSignIn, loading: oktaLoading, error: oktaError } = useOktaAuth()
-
-  const handleOktaLogin = async () => {
-    try {
-      await oktaSignIn()
-    } catch (error) {
-      console.error("Error en login con Okta:", error)
-    }
   }
 
   return (
@@ -46,14 +36,6 @@ export default function LoginForm() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Mostrar errores de Okta */}
-            {oktaError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{oktaError}</AlertDescription>
-                </Alert>
-            )}
-
             {/* Formulario de email y contraseña */}
             <form onSubmit={handleEmailLogin} className="space-y-4">
               <div className="space-y-2">
@@ -126,25 +108,70 @@ export default function LoginForm() {
                 Continuar con X
               </Button>
 
-              <Button variant="outline" className="w-full" onClick={handleOktaLogin} disabled={oktaLoading}>
-                <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
-                </svg>
-                {oktaLoading ? "Conectando..." : "Continuar con Okta (OIDC)"}
-              </Button>
+              {/* Separador para proveedores empresariales */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <Separator className="w-full" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">Proveedores Empresariales</span>
+                </div>
+              </div>
 
-              {/* Reemplazar todo el bloque del botón SAML con: */}
+              {/* Componentes que requieren contexto de autenticación */}
+              <ClientOnlyAuth
+                  fallback={
+                    <Button variant="outline" className="w-full" disabled>
+                      Cargando autenticación...
+                    </Button>
+                  }
+              >
+                <OktaLoginButton />
+                <CognitoLoginButton />
+              </ClientOnlyAuth>
+
+              {/* Botón de SAML */}
               <SimpleSAMLButton className="w-full" variant="outline" idpName="Okta con SAML 2.0" />
             </div>
 
             <div className="text-center text-sm text-muted-foreground">
               ¿No tienes una cuenta?{" "}
-              <a href="#" className="underline hover:text-primary">
+              <Link href="/register" className="underline hover:text-primary">
                 Regístrate aquí
-              </a>
+              </Link>
             </div>
           </CardContent>
         </Card>
       </div>
+  )
+}
+
+// Componente simple para Okta que no depende del contexto OIDC
+function OktaLoginButton() {
+  const { signIn: oktaSignIn, loading: oktaLoading, error: oktaError } = useOktaAuth()
+
+  const handleOktaLogin = async () => {
+    try {
+      await oktaSignIn()
+    } catch (error) {
+      console.error("Error en login con Okta:", error)
+    }
+  }
+
+  return (
+      <>
+        {oktaError && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>Okta: {oktaError}</AlertDescription>
+            </Alert>
+        )}
+        <Button variant="outline" className="w-full" onClick={handleOktaLogin} disabled={oktaLoading}>
+          <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+          </svg>
+          {oktaLoading ? "Conectando..." : "Continuar con Okta (OIDC)"}
+        </Button>
+      </>
   )
 }

@@ -1,6 +1,7 @@
 "use client"
 
 import type React from "react"
+import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -135,9 +136,9 @@ export default function LoginFormWithSAML() {
 
                     <div className="text-center text-sm text-muted-foreground">
                         ¿No tienes una cuenta?{" "}
-                        <a href="#" className="underline hover:text-primary">
+                        <Link href="/register" className="underline hover:text-primary">
                             Regístrate aquí
-                        </a>
+                        </Link>
                     </div>
                 </CardContent>
             </Card>
