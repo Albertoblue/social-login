@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { CheckCircle2, AlertCircle, LogOut } from "lucide-react"
 import { useOktaAuth } from "@/hooks/use-okta-auth"
 import { useSAMLAuth } from "@/hooks/use-saml-auth"
+import { useCognitoAuth } from "@/hooks/use-cognito-auth"
 import { useApi } from "@/hooks/use-api"
 
 export default function DashboardPage() {
@@ -19,6 +20,7 @@ export default function DashboardPage() {
     // Hooks de autenticación
     const oktaAuth = useOktaAuth()
     const samlAuth = useSAMLAuth()
+    const cognitoAuth = useCognitoAuth()
     const { get, post } = useApi()
 
     // Estados para el dashboard OIDC
@@ -28,15 +30,26 @@ export default function DashboardPage() {
     const [testResults, setTestResults] = useState<any>(null)
 
     // Estado combinado
-    const isAuthenticated = oktaAuth.isAuthenticated || samlAuth.isAuthenticated
-    const loading = oktaAuth.loading || samlAuth.loading
-    const authMethod = oktaAuth.isAuthenticated ? "OIDC" : samlAuth.isAuthenticated ? "SAML" : null
+    const isAuthenticated = oktaAuth.isAuthenticated || samlAuth.isAuthenticated || cognitoAuth.isAuthenticated
+    const loading = oktaAuth.loading || samlAuth.loading || cognitoAuth.loading
+    const authMethod = oktaAuth.isAuthenticated
+        ? "OIDC"
+        : samlAuth.isAuthenticated
+            ? "SAML"
+            : cognitoAuth.isAuthenticated
+                ? "COGNITO"
+                : null
 
     // Efecto para logs y debug
     useEffect(() => {
         console.log("🏠 Dashboard - Estados de autenticación:")
         console.log("📊 Okta:", { isAuthenticated: oktaAuth.isAuthenticated, loading: oktaAuth.loading })
         console.log("📊 SAML:", { isAuthenticated: samlAuth.isAuthenticated, loading: samlAuth.loading })
+        console.log("📊 Cognito:", {
+            isAuthenticated: cognitoAuth.isAuthenticated,
+            loading: cognitoAuth.loading,
+            backendValidated: cognitoAuth.backendValidated,
+        })
         console.log("🔑 Método:", authMethod)
 
         setDebugInfo({
@@ -49,9 +62,23 @@ export default function DashboardPage() {
                 isAuthenticated: samlAuth.isAuthenticated,
                 user: samlAuth.user || null,
             },
+            cognito: {
+                isAuthenticated: cognitoAuth.isAuthenticated,
+                user: cognitoAuth.user?.email || null,
+                backendValidated: cognitoAuth.backendValidated,
+                hasAccessToken: !!cognitoAuth.accessToken,
+            },
             timestamp: new Date().toISOString(),
         })
-    }, [oktaAuth.isAuthenticated, samlAuth.isAuthenticated, oktaAuth.loading, samlAuth.loading, authMethod])
+    }, [
+        oktaAuth.isAuthenticated,
+        samlAuth.isAuthenticated,
+        cognitoAuth.isAuthenticated,
+        oktaAuth.loading,
+        samlAuth.loading,
+        cognitoAuth.loading,
+        authMethod,
+    ])
 
     // Efecto para redirección
     useEffect(() => {
@@ -167,6 +194,26 @@ export default function DashboardPage() {
         }
     }
 
+    // Funciones para Cognito
+    const testCognitoValidation = async () => {
+        if (!cognitoAuth.isAuthenticated) return
+        try {
+            setApiLoading(true)
+            setApiError(null)
+            const result = await cognitoAuth.authenticatedFetch(
+                `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080"}/api/auth/validate-cognito`,
+            )
+            const data = await result.json()
+            setTestResults({ type: "cognito_validation", data })
+            console.log("✅ Cognito validation successful:", data)
+        } catch (error: any) {
+            setApiError(`Cognito validation failed: ${error.message}`)
+            console.error("❌ Cognito validation failed:", error)
+        } finally {
+            setApiLoading(false)
+        }
+    }
+
     const handleLogout = async () => {
         try {
             if (oktaAuth.isAuthenticated) {
@@ -174,6 +221,9 @@ export default function DashboardPage() {
             }
             if (samlAuth.isAuthenticated) {
                 samlAuth.logoutFromSAML()
+            }
+            if (cognitoAuth.isAuthenticated) {
+                cognitoAuth.signOut()
             }
             router.push("/")
         } catch (error) {
@@ -188,6 +238,11 @@ export default function DashboardPage() {
                     <CardContent className="flex flex-col items-center justify-center p-6">
                         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mb-4"></div>
                         <p>Verificando autenticación...</p>
+                        <div className="mt-4 text-xs text-muted-foreground">
+                            <p>Okta: {oktaAuth.loading ? "Cargando..." : oktaAuth.isAuthenticated ? "✅" : "❌"}</p>
+                            <p>SAML: {samlAuth.loading ? "Cargando..." : samlAuth.isAuthenticated ? "✅" : "❌"}</p>
+                            <p>Cognito: {cognitoAuth.loading ? "Cargando..." : cognitoAuth.isAuthenticated ? "✅" : "❌"}</p>
+                        </div>
                     </CardContent>
                 </Card>
             </div>
@@ -206,6 +261,19 @@ export default function DashboardPage() {
                             <AlertCircle className="h-4 w-4" />
                             <AlertDescription>No tienes una sesión válida. Serás redirigido al login...</AlertDescription>
                         </Alert>
+
+                        {/* Debug info para ver qué está pasando */}
+                        <div className="text-xs bg-gray-100 p-3 rounded">
+                            <p>
+                                <strong>Debug Info:</strong>
+                            </p>
+                            <p>Okta: {oktaAuth.isAuthenticated ? "✅ Autenticado" : "❌ No autenticado"}</p>
+                            <p>SAML: {samlAuth.isAuthenticated ? "✅ Autenticado" : "❌ No autenticado"}</p>
+                            <p>Cognito: {cognitoAuth.isAuthenticated ? "✅ Autenticado" : "❌ No autenticado"}</p>
+                            <p>Cognito Backend: {cognitoAuth.backendValidated ? "✅ Validado" : "❌ No validado"}</p>
+                            <p>Cognito Token: {cognitoAuth.accessToken ? "✅ Presente" : "❌ Ausente"}</p>
+                        </div>
+
                         <Button onClick={() => router.push("/")} className="w-full">
                             Ir al Login
                         </Button>
@@ -248,6 +316,116 @@ export default function DashboardPage() {
                             </Card>
 
                             {/* Debug info para SAML */}
+                            {debugInfo && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-lg">Información de Debug</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                    <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto">
+                      {JSON.stringify(debugInfo, null, 2)}
+                    </pre>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            <div className="flex gap-4">
+                                <Button onClick={handleLogout} variant="outline">
+                                    <LogOut className="h-4 w-4 mr-2" />
+                                    Cerrar Sesión
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        )
+    }
+
+    // Dashboard para Cognito
+    if (authMethod === "COGNITO") {
+        return (
+            <div className="min-h-screen bg-gray-50 py-8">
+                <div className="max-w-4xl mx-auto px-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <CheckCircle2 className="h-6 w-6 text-green-500" />
+                                Dashboard AWS Cognito - Acceso Autorizado
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Sesión AWS Cognito</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-2">
+                                        <p>
+                                            <strong>Usuario:</strong> {cognitoAuth.user?.email || cognitoAuth.user?.sub || "N/A"}
+                                        </p>
+                                        <p>
+                                            <strong>Nombre:</strong> {cognitoAuth.user?.name || "N/A"}
+                                        </p>
+                                        <p>
+                                            <strong>Email Verificado:</strong> {cognitoAuth.user?.email_verified ? "✅ Sí" : "❌ No"}
+                                        </p>
+                                        <p>
+                                            <strong>Método:</strong> AWS Cognito OIDC
+                                        </p>
+                                        <p>
+                                            <strong>Estado:</strong> <span className="text-green-600">Autenticado</span>
+                                        </p>
+                                        <p>
+                                            <strong>Backend Validado:</strong> {cognitoAuth.backendValidated ? "✅ Sí" : "❌ No"}
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Pruebas de API para Cognito */}
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle>🧪 Pruebas de API con Cognito</CardTitle>
+                                    <CardDescription>Prueba la comunicación entre frontend y backend</CardDescription>
+                                </CardHeader>
+                                <CardContent className="space-y-4">
+                                    {apiError && (
+                                        <div className="p-4 bg-red-100 border border-red-400 text-red-700 rounded">
+                                            <strong>Error:</strong> {apiError}
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <Button onClick={testPublicEndpoint} disabled={apiLoading} variant="outline" className="w-full">
+                                            🌐 {apiLoading ? "Probando..." : "Endpoint Público"}
+                                        </Button>
+
+                                        <Button
+                                            onClick={testCognitoValidation}
+                                            disabled={apiLoading || !cognitoAuth.accessToken}
+                                            variant="outline"
+                                            className="w-full"
+                                        >
+                                            ✅ {apiLoading ? "Validando..." : "Validar Token Cognito"}
+                                        </Button>
+                                    </div>
+
+                                    {/* Mostrar resultados de las pruebas */}
+                                    {testResults && (
+                                        <div className="mt-6 space-y-4">
+                                            <div className="p-4 bg-green-50 border border-green-200 rounded">
+                                                <h3 className="font-medium text-green-800 mb-2">✅ Resultado de {testResults.type}:</h3>
+                                                <pre className="text-sm bg-white p-3 rounded border overflow-auto max-h-96">
+                          {JSON.stringify(testResults.data, null, 2)}
+                        </pre>
+                                            </div>
+                                        </div>
+                                    )}
+                                </CardContent>
+                            </Card>
+
+                            {/* Debug info para Cognito */}
                             {debugInfo && (
                                 <Card>
                                     <CardHeader>

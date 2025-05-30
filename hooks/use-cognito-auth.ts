@@ -84,15 +84,23 @@ export function useCognitoAuth() {
         }
     }, [])
 
+    // Función para recargar manualmente el estado (útil después del callback)
+    const reloadAuthState = useCallback(async () => {
+        console.log("🔄 Recargando estado de autenticación de Cognito...")
+        await checkStoredTokens()
+    }, [])
+
     // Verificar tokens almacenados al cargar
     const checkStoredTokens = useCallback(async () => {
         try {
+            console.log("🔍 Verificando tokens almacenados de Cognito...")
+
             const storedTokens = localStorage.getItem("cognito_tokens")
             const storedUser = localStorage.getItem("cognito_user")
             const tokenTimestamp = localStorage.getItem("cognito_token_timestamp")
             const backendValidatedFlag = localStorage.getItem("cognito_backend_validated")
 
-            console.log("🔍 Verificando tokens almacenados:", {
+            console.log("📊 Estado del localStorage:", {
                 hasTokens: !!storedTokens,
                 hasUser: !!storedUser,
                 hasTimestamp: !!tokenTimestamp,
@@ -100,7 +108,7 @@ export function useCognitoAuth() {
             })
 
             if (!storedTokens || !storedUser || !tokenTimestamp || !backendValidatedFlag) {
-                console.log("❌ Datos incompletos en localStorage")
+                console.log("❌ Datos incompletos en localStorage para Cognito")
                 setLoading(false)
                 return
             }
@@ -110,6 +118,12 @@ export function useCognitoAuth() {
             const timestamp = Number.parseInt(tokenTimestamp)
             const now = Date.now()
             const tokenAge = (now - timestamp) / 1000 // en segundos
+
+            console.log("⏰ Información del token:", {
+                tokenAge: Math.round(tokenAge),
+                expiresIn: tokens.expires_in,
+                isExpired: tokenAge >= tokens.expires_in,
+            })
 
             // Verificar si el token ha expirado
             if (tokenAge >= tokens.expires_in) {
@@ -127,14 +141,16 @@ export function useCognitoAuth() {
             setAccessToken(tokens.access_token)
             setBackendValidated(true)
 
-            console.log("✅ Sesión de Cognito restaurada:", {
+            console.log("✅ Sesión de Cognito restaurada exitosamente:", {
                 user: userInfo.email || userInfo.sub,
                 tokenAge: Math.round(tokenAge),
                 expiresIn: tokens.expires_in,
+                backendValidated: true,
             })
+
             setLoading(false)
         } catch (error: any) {
-            console.error("Error checking stored tokens:", error)
+            console.error("❌ Error verificando tokens almacenados:", error)
             setError(error.message)
             setLoading(false)
         }
@@ -170,6 +186,19 @@ export function useCognitoAuth() {
         checkStoredTokens()
     }, [checkStoredTokens])
 
+    // Escuchar cambios en localStorage (útil para sincronizar entre pestañas)
+    useEffect(() => {
+        const handleStorageChange = (e: StorageEvent) => {
+            if (e.key === "cognito_tokens" || e.key === "cognito_user" || e.key === "cognito_backend_validated") {
+                console.log("🔄 Cambio detectado en localStorage, recargando estado...")
+                checkStoredTokens()
+            }
+        }
+
+        window.addEventListener("storage", handleStorageChange)
+        return () => window.removeEventListener("storage", handleStorageChange)
+    }, [checkStoredTokens])
+
     return {
         user,
         accessToken,
@@ -180,5 +209,6 @@ export function useCognitoAuth() {
         signIn,
         signOut,
         authenticatedFetch,
+        reloadAuthState, // Nueva función para recargar manualmente
     }
 }

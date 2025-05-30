@@ -139,6 +139,9 @@ export default function CognitoCallbackPage() {
                 // Limpiar la URL para evitar reutilización del código
                 window.history.replaceState({}, document.title, "/cognito/callback")
 
+                // Disparar evento personalizado para notificar al hook
+                window.dispatchEvent(new CustomEvent("cognito-auth-success"))
+
                 // Redirigir al dashboard después de 2 segundos
                 setTimeout(() => {
                     console.log("🔄 Redirigiendo a /dashboard...")
