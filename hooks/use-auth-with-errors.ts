@@ -26,7 +26,7 @@ export function useAuthWithErrors() {
         }
     }, [authError])
 
-    // Función mejorada para iniciar sesión
+    // Función para iniciar sesión
     const signInWithErrorHandling = async () => {
         try {
             setIsSigningIn(true)
@@ -113,15 +113,12 @@ export function useAuthWithErrors() {
         isSigningIn,
         isSigningOut,
 
-        // Funciones mejoradas
         signIn: signInWithErrorHandling,
         signOut: signOutWithErrorHandling,
         clearError,
         getUserInfo,
         isTokenExpiringSoon,
-
-        // Información útil
-        //isAuthenticated: Boolean(auth.isAuthenticated),
-        //isLoading: Boolean(auth.isLoading) || isSigningIn || isSigningOut,
+        isAuthenticated: Boolean(auth.isAuthenticated),
+        isLoading: Boolean(auth.isLoading) || isSigningIn || isSigningOut,
     }
 }
