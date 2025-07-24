@@ -12,6 +12,9 @@ import { useOktaAuth } from "@/hooks/use-okta-auth"
 import { useSAMLAuth } from "@/hooks/use-saml-auth"
 import { useCognitoAuth } from "@/hooks/use-cognito-auth"
 import { useApi } from "@/hooks/use-api"
+import { getTokenFromDashboardURL, clearTokenFromURL, decodeJWT, type JWTPayload } from "@/lib/utils"
+import { TokenValidationButton } from "@/components/token-validation-button"
+import { UserValidationButton } from "@/components/user-validation-button"
 
 export default function DashboardPage() {
     const router = useRouter()
@@ -21,7 +24,7 @@ export default function DashboardPage() {
     const oktaAuth = useOktaAuth()
     const samlAuth = useSAMLAuth()
     const cognitoAuth = useCognitoAuth()
-    const { get, post } = useApi()
+    const { get, post, apiCall, accessToken } = useApi()
 
     // Estados para el dashboard OIDC
     const [profile, setProfile] = useState<any>(null)
@@ -29,8 +32,50 @@ export default function DashboardPage() {
     const [apiError, setApiError] = useState<string | null>(null)
     const [testResults, setTestResults] = useState<any>(null)
 
+    // Estados para JWT desde URL
+    const [urlJwtPayload, setUrlJwtPayload] = useState<JWTPayload | null>(null)
+    const [urlJwtSource, setUrlJwtSource] = useState<string | null>(null)
+    const [urlRawToken, setUrlRawToken] = useState<string | null>(null)
+
+    // Estados para session tokens
+    const [samlSessionToken, setSamlSessionToken] = useState<string | null>(null)
+    const [urlSessionToken, setUrlSessionToken] = useState<string | null>(null)
+    const [oktaSessionToken, setOktaSessionToken] = useState<string | null>(null)
+    const [cognitoSessionToken, setCognitoSessionToken] = useState<string | null>(null)
+
+    // Debug para session tokens
+    useEffect(() => {
+        console.log("🔄 Session tokens updated:", {
+            samlSessionToken: samlSessionToken ? samlSessionToken.substring(0, 30) + "..." : null,
+            urlSessionToken: urlSessionToken ? urlSessionToken.substring(0, 30) + "..." : null,
+            oktaSessionToken: oktaSessionToken ? oktaSessionToken.substring(0, 30) + "..." : null,
+            cognitoSessionToken: cognitoSessionToken ? cognitoSessionToken.substring(0, 30) + "..." : null
+        })
+    }, [samlSessionToken, urlSessionToken, oktaSessionToken, cognitoSessionToken])
+
+    // Debug callbacks para verificar que se están pasando correctamente
+    const handleSamlTokenReceived = (token: string) => {
+        console.log("📞 SAML callback recibido:", token.substring(0, 30) + "...")
+        setSamlSessionToken(token)
+    }
+
+    const handleUrlTokenReceived = (token: string) => {
+        console.log("📞 URL callback recibido:", token.substring(0, 30) + "...")
+        setUrlSessionToken(token)
+    }
+
+    const handleOktaTokenReceived = (token: string) => {
+        console.log("📞 Okta callback recibido:", token.substring(0, 30) + "...")
+        setOktaSessionToken(token)
+    }
+
+    const handleCognitoTokenReceived = (token: string) => {
+        console.log("📞 Cognito callback recibido:", token.substring(0, 30) + "...")
+        setCognitoSessionToken(token)
+    }
+
     // Estado combinado
-    const isAuthenticated = oktaAuth.isAuthenticated || samlAuth.isAuthenticated || cognitoAuth.isAuthenticated
+    const isAuthenticated = oktaAuth.isAuthenticated || samlAuth.isAuthenticated || cognitoAuth.isAuthenticated || !!urlJwtPayload
     const loading = oktaAuth.loading || samlAuth.loading || cognitoAuth.loading
     const authMethod = oktaAuth.isAuthenticated
         ? "OIDC"
@@ -38,7 +83,40 @@ export default function DashboardPage() {
             ? "SAML"
             : cognitoAuth.isAuthenticated
                 ? "COGNITO"
-                : null
+                : urlJwtPayload
+                    ? "JWT_URL"
+                    : null
+
+    // Efecto para manejar JWT desde URL
+    useEffect(() => {
+        const token = getTokenFromDashboardURL()
+        if (token) {
+            console.log("🔍 Token encontrado en URL:", token.substring(0, 50) + "...")
+            
+            const jwtPayload = decodeJWT(token)
+            if (jwtPayload) {
+                console.log("✅ JWT decodificado desde URL:", jwtPayload)
+                setUrlJwtPayload(jwtPayload)
+                setUrlRawToken(token) // Guardar el token raw para validación
+                
+                // Determinar el proveedor basado en el payload
+                let source = "Unknown"
+                if (jwtPayload.iss?.includes("cognito")) {
+                    source = "AWS Cognito"
+                } else if (jwtPayload.iss?.includes("okta")) {
+                    source = "Okta"
+                } else if (jwtPayload.aud || jwtPayload.sub) {
+                    source = "Generic OAuth/SAML"
+                }
+                setUrlJwtSource(source)
+                
+                // Limpiar el token de la URL
+                clearTokenFromURL()
+            } else {
+                console.error("❌ Error decodificando JWT desde URL")
+            }
+        }
+    }, [])
 
     // Efecto para logs y debug
     useEffect(() => {
@@ -51,6 +129,7 @@ export default function DashboardPage() {
             backendValidated: cognitoAuth.backendValidated,
         })
         console.log("🔑 Método:", authMethod)
+        console.log("🎫 JWT desde URL:", urlJwtPayload ? "Presente" : "No presente")
 
         setDebugInfo({
             authMethod,
@@ -68,6 +147,11 @@ export default function DashboardPage() {
                 backendValidated: cognitoAuth.backendValidated,
                 hasAccessToken: !!cognitoAuth.accessToken,
             },
+            urlJwt: {
+                hasToken: !!urlJwtPayload,
+                source: urlJwtSource,
+                user: urlJwtPayload?.email || urlJwtPayload?.sub || null,
+            },
             timestamp: new Date().toISOString(),
         })
     }, [
@@ -78,6 +162,13 @@ export default function DashboardPage() {
         samlAuth.loading,
         cognitoAuth.loading,
         authMethod,
+        urlJwtPayload,
+        urlJwtSource,
+        urlRawToken,
+        samlSessionToken,
+        urlSessionToken,
+        oktaSessionToken,
+        cognitoSessionToken,
     ])
 
     // Efecto para redirección
@@ -194,6 +285,52 @@ export default function DashboardPage() {
         }
     }
 
+    const fetchUserToken = async () => {
+        if (!oktaAuth.isAuthenticated) return
+        try {
+            setApiLoading(true)
+            setApiError(null)
+            const data = await get("/user/token")
+            //setProfile(data.user)
+            setTestResults({ type: "profile", data })
+            console.log("👤 Token User:", data)
+        } catch (error: any) {
+            setApiError(error.message)
+            console.error("Error fetching token:", error)
+        } finally {
+            setApiLoading(false)
+        }
+    }
+
+    const fetchUserPermission =  async () => {
+        if (!oktaAuth.isAuthenticated) return
+        try {
+            setApiLoading(true)
+            setApiError(null)
+            const data = await apiCall("/user/validate", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(accessToken && { "Session-Token": accessToken+"Hola" })
+                },
+                body: JSON.stringify({
+                    resource: "/cc/model-configurator/products-operations/v1/products/searches",
+                    action: "POST",
+                    role: "LD_BUSINESS_ADMIN"
+                })
+            })
+            //setProfile(data.user)
+            setTestResults({ type: "profile", data })
+            console.log("👤 Token User:", data)
+        } catch (error: any) {
+            setApiError(error.message)
+            console.error("Error fetching token:", error)
+        } finally {
+            setApiLoading(false)
+        }
+    }
+
+
     // Funciones para Cognito
     const testCognitoValidation = async () => {
         if (!cognitoAuth.isAuthenticated) return
@@ -242,6 +379,7 @@ export default function DashboardPage() {
                             <p>Okta: {oktaAuth.loading ? "Cargando..." : oktaAuth.isAuthenticated ? "✅" : "❌"}</p>
                             <p>SAML: {samlAuth.loading ? "Cargando..." : samlAuth.isAuthenticated ? "✅" : "❌"}</p>
                             <p>Cognito: {cognitoAuth.loading ? "Cargando..." : cognitoAuth.isAuthenticated ? "✅" : "❌"}</p>
+                            <p>URL JWT: {urlJwtPayload ? "✅" : "❌"}</p>
                         </div>
                     </CardContent>
                 </Card>
@@ -272,6 +410,7 @@ export default function DashboardPage() {
                             <p>Cognito: {cognitoAuth.isAuthenticated ? "✅ Autenticado" : "❌ No autenticado"}</p>
                             <p>Cognito Backend: {cognitoAuth.backendValidated ? "✅ Validado" : "❌ No validado"}</p>
                             <p>Cognito Token: {cognitoAuth.accessToken ? "✅ Presente" : "❌ Ausente"}</p>
+                            <p>URL JWT: {urlJwtPayload ? "✅ Presente" : "❌ Ausente"}</p>
                         </div>
 
                         <Button onClick={() => router.push("/")} className="w-full">
@@ -315,6 +454,95 @@ export default function DashboardPage() {
                                 </CardContent>
                             </Card>
 
+                            {/* Datos del JWT si están disponibles */}
+                            {samlAuth.jwtPayload && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-lg">Datos del JWT SAML</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-3">
+                                            {samlAuth.jwtPayload.sub && (
+                                                <p>
+                                                    <strong>Subject (sub):</strong> {samlAuth.jwtPayload.sub}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.email && (
+                                                <p>
+                                                    <strong>Email:</strong> {samlAuth.jwtPayload.email}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.name && (
+                                                <p>
+                                                    <strong>Nombre:</strong> {samlAuth.jwtPayload.name}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.given_name && (
+                                                <p>
+                                                    <strong>Nombre:</strong> {samlAuth.jwtPayload.given_name}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.family_name && (
+                                                <p>
+                                                    <strong>Apellido:</strong> {samlAuth.jwtPayload.family_name}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.preferred_username && (
+                                                <p>
+                                                    <strong>Username:</strong> {samlAuth.jwtPayload.preferred_username}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.iss && (
+                                                <p>
+                                                    <strong>Emisor (iss):</strong> {samlAuth.jwtPayload.iss}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.aud && (
+                                                <p>
+                                                    <strong>Audiencia (aud):</strong> {Array.isArray(samlAuth.jwtPayload.aud) 
+                                                        ? samlAuth.jwtPayload.aud.join(", ") 
+                                                        : samlAuth.jwtPayload.aud}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.exp && (
+                                                <p>
+                                                    <strong>Expira:</strong> {new Date(samlAuth.jwtPayload.exp * 1000).toLocaleString()}
+                                                </p>
+                                            )}
+                                            {samlAuth.jwtPayload.iat && (
+                                                <p>
+                                                    <strong>Emitido:</strong> {new Date(samlAuth.jwtPayload.iat * 1000).toLocaleString()}
+                                                </p>
+                                            )}
+                                            
+                                            {/* Mostrar otros campos personalizados */}
+                                            {Object.entries(samlAuth.jwtPayload)
+                                                .filter(([key]) => !['sub', 'email', 'name', 'given_name', 'family_name', 'preferred_username', 'iss', 'aud', 'exp', 'iat', 'nbf'].includes(key))
+                                                .map(([key, value]) => (
+                                                    <p key={key}>
+                                                        <strong>{key}:</strong> {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                                    </p>
+                                                ))
+                                            }
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* JWT Payload completo (para debug) */}
+                            {samlAuth.jwtPayload && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-lg">JWT Payload Completo</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto max-h-96 border">
+                                            {JSON.stringify(samlAuth.jwtPayload, null, 2)}
+                                        </pre>
+                                    </CardContent>
+                                </Card>
+                            )}
+
                             {/* Debug info para SAML */}
                             {debugInfo && (
                                 <Card>
@@ -329,8 +557,27 @@ export default function DashboardPage() {
                                 </Card>
                             )}
 
-                            <div className="flex gap-4">
-                                <Button onClick={handleLogout} variant="outline">
+                            <div className="flex flex-col gap-4">
+                                {samlAuth.rawToken && (
+                                    <>
+                                        <TokenValidationButton 
+                                            token={samlAuth.rawToken}
+                                            className="w-full"
+                                            onAccessTokenReceived={handleSamlTokenReceived}
+                                        >
+                                            🔑 Validar Token SAML
+                                        </TokenValidationButton>
+                                        <UserValidationButton 
+                                            token={samlAuth.rawToken}
+                                            sessionToken={samlSessionToken || undefined}
+                                            hasValidatedToken={!!samlSessionToken}
+                                            className="w-full"
+                                        >
+                                            🛡️ Validar Usuario SAML
+                                        </UserValidationButton>
+                                    </>
+                                )}
+                                <Button onClick={handleLogout} variant="outline" className="w-full">
                                     <LogOut className="h-4 w-4 mr-2" />
                                     Cerrar Sesión
                                 </Button>
@@ -439,10 +686,206 @@ export default function DashboardPage() {
                                 </Card>
                             )}
 
-                            <div className="flex gap-4">
-                                <Button onClick={handleLogout} variant="outline">
+                            <div className="flex flex-col gap-4">
+                                {cognitoAuth.accessToken && (
+                                    <>
+                                        <TokenValidationButton 
+                                            token={cognitoAuth.accessToken}
+                                            className="w-full"
+                                            onAccessTokenReceived={handleCognitoTokenReceived}
+                                        >
+                                            🔑 Validar Token Cognito
+                                        </TokenValidationButton>
+                                        <UserValidationButton 
+                                            token={cognitoAuth.accessToken}
+                                            sessionToken={cognitoSessionToken || undefined}
+                                            hasValidatedToken={!!cognitoSessionToken}
+                                            className="w-full"
+                                        >
+                                            🛡️ Validar Usuario Cognito
+                                        </UserValidationButton>
+                                    </>
+                                )}
+                                <Button onClick={handleLogout} variant="outline" className="w-full">
                                     <LogOut className="h-4 w-4 mr-2" />
                                     Cerrar Sesión
+                                </Button>
+                            </div>
+                        </CardContent>
+                    </Card>
+                </div>
+            </div>
+        )
+    }
+
+    // Dashboard para JWT desde URL
+    if (authMethod === "JWT_URL") {
+        return (
+            <div className="min-h-screen bg-gray-50 py-8">
+                <div className="max-w-4xl mx-auto px-4">
+                    <Card>
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <CheckCircle2 className="h-6 w-6 text-green-500" />
+                                Dashboard JWT - Token desde URL
+                            </CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-6">
+                            <Card>
+                                <CardHeader>
+                                    <CardTitle className="text-lg">Información del Token JWT</CardTitle>
+                                </CardHeader>
+                                <CardContent>
+                                    <div className="space-y-2">
+                                        <p>
+                                            <strong>Proveedor:</strong> {urlJwtSource || "Desconocido"}
+                                        </p>
+                                        <p>
+                                            <strong>Método:</strong> JWT desde URL
+                                        </p>
+                                        <p>
+                                            <strong>Estado:</strong> <span className="text-green-600">Token Procesado</span>
+                                        </p>
+                                    </div>
+                                </CardContent>
+                            </Card>
+
+                            {/* Datos del JWT */}
+                            {urlJwtPayload && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-lg">Datos del Usuario (JWT)</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <div className="space-y-3">
+                                            {urlJwtPayload.sub && (
+                                                <p>
+                                                    <strong>Subject (sub):</strong> {urlJwtPayload.sub}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.email && (
+                                                <p>
+                                                    <strong>Email:</strong> {urlJwtPayload.email}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.name && (
+                                                <p>
+                                                    <strong>Nombre:</strong> {urlJwtPayload.name}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.given_name && (
+                                                <p>
+                                                    <strong>Nombre:</strong> {urlJwtPayload.given_name}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.family_name && (
+                                                <p>
+                                                    <strong>Apellido:</strong> {urlJwtPayload.family_name}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.preferred_username && (
+                                                <p>
+                                                    <strong>Username:</strong> {urlJwtPayload.preferred_username}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.username && (
+                                                <p>
+                                                    <strong>Username:</strong> {urlJwtPayload.username}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.iss && (
+                                                <p>
+                                                    <strong>Emisor (iss):</strong> {urlJwtPayload.iss}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.aud && (
+                                                <p>
+                                                    <strong>Audiencia (aud):</strong> {Array.isArray(urlJwtPayload.aud) 
+                                                        ? urlJwtPayload.aud.join(", ") 
+                                                        : urlJwtPayload.aud}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.scope && (
+                                                <p>
+                                                    <strong>Scopes:</strong> {urlJwtPayload.scope}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.exp && (
+                                                <p>
+                                                    <strong>Expira:</strong> {new Date(urlJwtPayload.exp * 1000).toLocaleString()}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.iat && (
+                                                <p>
+                                                    <strong>Emitido:</strong> {new Date(urlJwtPayload.iat * 1000).toLocaleString()}
+                                                </p>
+                                            )}
+                                            {urlJwtPayload.auth_time && (
+                                                <p>
+                                                    <strong>Tiempo de Auth:</strong> {new Date(urlJwtPayload.auth_time * 1000).toLocaleString()}
+                                                </p>
+                                            )}
+                                            
+                                            {/* Mostrar otros campos personalizados */}
+                                            {Object.entries(urlJwtPayload)
+                                                .filter(([key]) => ![
+                                                    'sub', 'email', 'name', 'given_name', 'family_name', 'preferred_username', 
+                                                    'username', 'iss', 'aud', 'exp', 'iat', 'nbf', 'scope', 'auth_time'
+                                                ].includes(key))
+                                                .map(([key, value]) => (
+                                                    <p key={key}>
+                                                        <strong>{key}:</strong> {typeof value === 'object' ? JSON.stringify(value) : String(value)}
+                                                    </p>
+                                                ))
+                                            }
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            {/* JWT Payload completo */}
+                            {urlJwtPayload && (
+                                <Card>
+                                    <CardHeader>
+                                        <CardTitle className="text-lg">JWT Payload Completo</CardTitle>
+                                    </CardHeader>
+                                    <CardContent>
+                                        <pre className="text-xs bg-gray-100 p-4 rounded overflow-auto max-h-96 border">
+                                            {JSON.stringify(urlJwtPayload, null, 2)}
+                                        </pre>
+                                    </CardContent>
+                                </Card>
+                            )}
+
+                            <div className="flex flex-col gap-4">
+                                {urlRawToken && (
+                                    <>
+                                        <TokenValidationButton 
+                                            token={urlRawToken}
+                                            className="w-full"
+                                            onAccessTokenReceived={handleUrlTokenReceived}
+                                        >
+                                            🔑 Validar Token
+                                        </TokenValidationButton>
+                                        <UserValidationButton 
+                                            token={urlRawToken}
+                                            sessionToken={urlSessionToken || undefined}
+                                            hasValidatedToken={!!urlSessionToken}
+                                            className="w-full"
+                                        >
+                                            🛡️ Validar Usuario
+                                        </UserValidationButton>
+                                    </>
+                                )}
+                                <Button onClick={() => {
+                                    setUrlJwtPayload(null)
+                                    setUrlJwtSource(null)
+                                    setUrlRawToken(null)
+                                    setUrlSessionToken(null)
+                                    router.push("/")
+                                }} variant="outline" className="w-full">
+                                    <LogOut className="h-4 w-4 mr-2" />
+                                    Volver al Login
                                 </Button>
                             </div>
                         </CardContent>
@@ -485,9 +928,31 @@ export default function DashboardPage() {
                             </div>
                         )}
 
-                        <Button onClick={handleLogout} variant="outline" className="w-full">
-                            Cerrar Sesión
-                        </Button>
+                        <div className="flex flex-col gap-4">
+                            {oktaAuth.accessToken && (
+                                <>
+                                    <TokenValidationButton 
+                                        token={oktaAuth.accessToken}
+                                        className="w-full"
+                                        onAccessTokenReceived={handleOktaTokenReceived}
+                                    >
+                                        🔑 Validar Token Okta
+                                    </TokenValidationButton>
+                                    <UserValidationButton 
+                                        token={oktaAuth.accessToken}
+                                        sessionToken={oktaSessionToken || undefined}
+                                        hasValidatedToken={!!oktaSessionToken}
+                                        className="w-full"
+                                    >
+                                        🛡️ Validar Usuario Okta
+                                    </UserValidationButton>
+                                </>
+                            )}
+                            <Button onClick={handleLogout} variant="outline" className="w-full">
+                                <LogOut className="h-4 w-4 mr-2" />
+                                Cerrar Sesión
+                            </Button>
+                        </div>
                     </CardContent>
                 </Card>
 
@@ -554,6 +1019,25 @@ export default function DashboardPage() {
                                 📤 {apiLoading ? "Enviando..." : "Test POST Autenticado"}
                             </Button>
                         </div>
+
+                        <Button
+                            onClick={fetchUserToken}
+                            disabled={apiLoading || !oktaAuth.accessToken}
+                            variant="outline"
+                            className="w-full"
+                        >
+                            🔑 {apiLoading ? "Analizando..." : "Authorizacion okta"}
+                        </Button>
+
+                        <Button
+                            onClick={fetchUserPermission}
+                            disabled={apiLoading || !oktaAuth.accessToken}
+                            variant="outline"
+                            className="w-full"
+                        >
+                            🔑 {apiLoading ? "Analizando..." : "Verificar permisos"}
+                        </Button>
+
 
                         {/* Mostrar resultados de las pruebas */}
                         {testResults && (

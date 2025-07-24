@@ -121,6 +121,12 @@ export default function CognitoCallbackPage() {
                 localStorage.setItem("cognito_user", JSON.stringify(userInfo))
                 localStorage.setItem("cognito_token_timestamp", Date.now().toString())
                 localStorage.setItem("cognito_backend_validated", "true")
+                
+                console.log("💾 Datos guardados en localStorage:")
+                console.log("- cognito_tokens:", !!localStorage.getItem("cognito_tokens"))
+                console.log("- cognito_user:", !!localStorage.getItem("cognito_user"))
+                console.log("- cognito_token_timestamp:", localStorage.getItem("cognito_token_timestamp"))
+                console.log("- cognito_backend_validated:", localStorage.getItem("cognito_backend_validated"))
 
                 // Marcar como procesado exitosamente
                 hasProcessed.current = true
@@ -142,11 +148,20 @@ export default function CognitoCallbackPage() {
                 // Disparar evento personalizado para notificar al hook
                 window.dispatchEvent(new CustomEvent("cognito-auth-success"))
 
-                // Redirigir al dashboard después de 2 segundos
+                // Redirigir al dashboard después de asegurar que el estado se propagó
                 setTimeout(() => {
-                    console.log("🔄 Redirigiendo a /dashboard...")
-                    router.push("/dashboard")
-                }, 2000)
+                    console.log("🔄 Verificando autenticación antes de redirigir...")
+                    const tokensCheck = localStorage.getItem("cognito_tokens")
+                    const userCheck = localStorage.getItem("cognito_user") 
+                    const backendCheck = localStorage.getItem("cognito_backend_validated")
+                    
+                    if (tokensCheck && userCheck && backendCheck) {
+                        console.log("✅ Estado confirmado en localStorage, redirigiendo a /dashboard...")
+                        window.location.href = "/dashboard"
+                    } else {
+                        console.error("❌ Estado incompleto en localStorage, no redirigiendo")
+                    }
+                }, 3000)
             } catch (error: any) {
                 console.error("❌ Error en callback de Cognito:", error)
 
@@ -180,8 +195,8 @@ export default function CognitoCallbackPage() {
     // Función para intercambiar código por tokens
     const exchangeCodeForTokens = async (code: string) => {
         try {
-            const tokenUrl = "https://us-east-1sch6bvepp.auth.us-east-1.amazoncognito.com/oauth2/token"
-            const redirectUri = window.location.origin + "/cognito/callback"
+            const tokenUrl = "https://sch6bvepp.auth.us-east-1.amazoncognito.com/oauth2/token"
+            const redirectUri = "http://localhost:3000/cognito/callback"
 
             console.log("🔄 Intercambiando código por tokens...")
             console.log("📍 Token URL:", tokenUrl)

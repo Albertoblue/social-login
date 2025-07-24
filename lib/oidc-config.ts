@@ -5,13 +5,13 @@ const getBaseUrl = () => {
     if (typeof window !== "undefined") {
         return window.location.origin
     }
-    return "https://d84l1y8p4kdic.cloudfront.net" // URL por defecto para SSR
+    return "http://localhost:3000" // URL por defecto para SSR
 }
 
 export const cognitoOidcConfig: UserManagerSettings = {
     authority: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_SCH6BvEpP",
     client_id: "7g2qqurodeum6tc2h6e57vuec",
-    redirect_uri: `${getBaseUrl()}/cognito/callback`,
+    redirect_uri: 'http://localhost:3000/cognito/callback',//`${getBaseUrl()}/cognito/callback`,
     post_logout_redirect_uri: getBaseUrl(),
     response_type: "code",
 

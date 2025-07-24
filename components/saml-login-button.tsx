@@ -24,11 +24,7 @@ export function SAMLLoginButton({
     const [error, setError] = useState<string | null>(null)
 
     // Extraer solo lo que necesitamos del hook para evitar re-renderizados innecesarios
-    const {loginWithSAML, loading} = useSAMLAuth({
-        onError: useCallback((err: { message: SetStateAction<string | null> }) => {
-            setError(err instanceof Error ? err.message : String(err))
-        }, []),
-    })
+    const {loginWithSAML, loading} = useSAMLAuth()
 
     // Usar useCallback para evitar recrear la función en cada renderizado
     const handleSAMLLogin = useCallback(async () => {

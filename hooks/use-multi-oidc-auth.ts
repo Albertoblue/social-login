@@ -3,7 +3,16 @@
 import { useAuth } from "react-oidc-context"
 import { UserManager } from "oidc-client-ts"
 import { useState, useCallback, useMemo } from "react"
-import { cognitoOidcConfig, oktaOidcConfig } from "@/lib/oidc-config"
+import { cognitoOidcConfig } from "@/lib/oidc-config"
+
+// Temporary placeholder for Okta config since it's not implemented yet
+const oktaOidcConfig = {
+    authority: "https://placeholder.okta.com",
+    client_id: "placeholder",
+    redirect_uri: "http://localhost:3000/okta/callback",
+    response_type: "code",
+    scope: "openid profile email"
+}
 
 type OidcProvider = "cognito" | "okta"
 

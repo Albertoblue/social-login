@@ -12,7 +12,7 @@ const cognitoConfig: CognitoConfig = {
     clientId: "7g2qqurodeum6tc2h6e57vuec",
     region: "us-east-1",
     authority: "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_SCH6BvEpP",
-    redirectUri: "https://d84l1y8p4kdic.cloudfront.net/cognito/callback",
+    redirectUri: "http://localhost:3000/cognito/callback",
     scope: "phone openid email",
 }
 

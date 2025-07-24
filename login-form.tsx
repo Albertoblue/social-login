@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-
+import { useState } from "react"
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog"
 import { Linkedin, GitBranch, AlertCircle } from "lucide-react"
 import { SimpleSAMLButton } from "@/components/simple-saml-button"
 import { CognitoLoginButton } from "@/components/oidc-login-buttons"
@@ -130,8 +131,15 @@ export default function LoginForm() {
                 <CognitoLoginButton />
               </ClientOnlyAuth>
 
+              {/* Botones de autenticación directa */}
+              <DirectOktaLoginButtons />
+              <DirectCognitoLoginButtons />
+
               {/* Botón de SAML */}
               <SimpleSAMLButton className="w-full" variant="outline" idpName="Okta con SAML 2.0" />
+
+              {/* Health Check */}
+              <HealthCheckButton />
             </div>
 
             <div className="text-center text-sm text-muted-foreground">
@@ -173,5 +181,131 @@ function OktaLoginButton() {
           {oktaLoading ? "Conectando..." : "Continuar con Okta (OIDC)"}
         </Button>
       </>
+  )
+}
+
+// Botones directos para Okta
+function DirectOktaLoginButtons() {
+  const handleOktaLogin = () => {
+    window.location.href = "http://localhost:8080/oauth2/authorization/okta"
+  }
+
+  return (
+    <Button variant="outline" className="w-full" onClick={handleOktaLogin}>
+      <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+      </svg>
+      Okta - OAuth2 Direct
+    </Button>
+  )
+}
+
+// Botones directos para Cognito
+function DirectCognitoLoginButtons() {
+  const handleCognitoLogin = () => {
+    window.location.href = "http://localhost:8080/oauth2/authorization/cognito"
+  }
+
+  return (
+    <Button variant="outline" className="w-full" onClick={handleCognitoLogin}>
+      <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+        <path d="M18.75 2.5h-13.5A2.75 2.75 0 0 0 2.5 5.25v13.5A2.75 2.75 0 0 0 5.25 21.5h13.5A2.75 2.75 0 0 0 21.5 18.75V5.25A2.75 2.75 0 0 0 18.75 2.5zm.75 16.25c0 .414-.336.75-.75.75H5.25a.75.75 0 0 1-.75-.75V5.25c0-.414.336-.75.75-.75h13.5c.414 0 .75.336.75.75v13.5z"/>
+      </svg>
+      Cognito - OAuth2 Direct
+    </Button>
+  )
+}
+
+// Botón de Health Check
+function HealthCheckButton() {
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [healthData, setHealthData] = useState<any>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const handleHealthCheck = async () => {
+    setIsLoading(true)
+    setError(null)
+    setHealthData(null)
+    setIsModalOpen(true)
+
+    try {
+      const response = await fetch("http://localhost:8080/api/public/health")
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+      }
+      const data = await response.json()
+      setHealthData(data)
+    } catch (error: any) {
+      setError(error.message || "Error desconocido")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <>
+      <Button variant="secondary" className="w-full" onClick={handleHealthCheck}>
+        <svg className="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+          <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+        </svg>
+        Verificar Configuración (Health Check)
+      </Button>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Health Check - Estado de la API</DialogTitle>
+            <DialogDescription>
+              Resultado de la verificación del estado de la API backend
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {isLoading && (
+              <div className="flex items-center justify-center p-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-4"></div>
+                <p>Verificando estado de la API...</p>
+              </div>
+            )}
+
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>
+                  <strong>Error:</strong> {error}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {healthData && (
+              <div className="space-y-4">
+                <Alert>
+                  <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  <AlertDescription>
+                    <strong>Conexión exitosa:</strong> La API está respondiendo correctamente
+                  </AlertDescription>
+                </Alert>
+
+                <div className="bg-gray-50 p-4 rounded-lg border">
+                  <h4 className="font-medium mb-3">Respuesta de la API:</h4>
+                  <pre className="text-xs bg-white p-3 rounded border overflow-auto max-h-96 whitespace-pre-wrap">
+                    {JSON.stringify(healthData, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button onClick={() => setIsModalOpen(false)}>
+              Cerrar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

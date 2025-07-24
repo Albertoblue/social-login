@@ -34,10 +34,10 @@ export function useCognitoAuth() {
             setLoading(true)
             setError(null)
 
-            const baseUrl = "https://us-east-1sch6bvepp.auth.us-east-1.amazoncognito.com"
+            const baseUrl = "https://sch6bvepp.auth.us-east-1.amazoncognito.com"
             const clientId = "7g2qqurodeum6tc2h6e57vuec"
-            const redirectUri = encodeURIComponent(window.location.origin + "/cognito/callback")
-            const scope = encodeURIComponent("openid email profile")
+            const redirectUri = encodeURIComponent("http://localhost:3000/cognito/callback")
+            const scope = encodeURIComponent("phone openid email")
 
             const authUrl =
                 `${baseUrl}/oauth2/authorize?` +
@@ -71,7 +71,7 @@ export function useCognitoAuth() {
             setError(null)
 
             // Redirigir a logout de Cognito
-            const baseUrl = "https://us-east-1sch6bvepp.auth.us-east-1.amazoncognito.com"
+            const baseUrl = "https://sch6bvepp.auth.us-east-1.amazoncognito.com"
             const clientId = "7g2qqurodeum6tc2h6e57vuec"
             const logoutUri = encodeURIComponent(window.location.origin)
 
@@ -137,6 +137,11 @@ export function useCognitoAuth() {
             }
 
             // Token válido, restaurar estado
+            console.log("✅ Restaurando estado de Cognito:", {
+                user: userInfo.email,
+                tokenLength: tokens.access_token.length,
+                backendValidated: true
+            })
             setUser(userInfo)
             setAccessToken(tokens.access_token)
             setBackendValidated(true)
@@ -195,8 +200,17 @@ export function useCognitoAuth() {
             }
         }
 
+        const handleAuthSuccess = () => {
+            console.log("🔄 Evento cognito-auth-success recibido, recargando estado...")
+            checkStoredTokens()
+        }
+
         window.addEventListener("storage", handleStorageChange)
-        return () => window.removeEventListener("storage", handleStorageChange)
+        window.addEventListener("cognito-auth-success", handleAuthSuccess)
+        return () => {
+            window.removeEventListener("storage", handleStorageChange)
+            window.removeEventListener("cognito-auth-success", handleAuthSuccess)
+        }
     }, [checkStoredTokens])
 
     return {
